@@ -76,13 +76,29 @@ exports.run = function (implementation, options, runExpressionTest) {
 
             const expected = fixture.expected;
             const compileOk = deepEqual(result.compiled, expected.compiled);
+            const expectedError = expected.compiled.result === 'error';
+            const recompileOk = expectedError || (compileOk && deepEqual(result.recompiled, expected.compiled));
 
             const evalOk = compileOk && deepEqual(result.outputs, expected.outputs);
-            params.ok = compileOk && evalOk;
+            const reEvalOk = expectedError || (recompileOk && deepEqual(result.reEvalOutputs, expected.outputs));
+            params.ok = compileOk && evalOk && recompileOk && reEvalOk;
 
             let msg = '';
             if (!compileOk) {
                 msg += diff.diffJson(expected.compiled, result.compiled)
+                    .map((hunk) => {
+                        if (hunk.added) {
+                            return `+ ${hunk.value}`;
+                        } else if (hunk.removed) {
+                            return `- ${hunk.value}`;
+                        } else {
+                            return `  ${hunk.value}`;
+                        }
+                    })
+                    .join('');
+            }
+            if (compileOk && !recompileOk) {
+                msg += diff.diffJson(expected.compiled, result.recompiled)
                     .map((hunk) => {
                         if (hunk.added) {
                             return `+ ${hunk.value}`;
@@ -99,6 +115,17 @@ exports.run = function (implementation, options, runExpressionTest) {
                     .map((expectedOutput, i) => {
                         if (!deepEqual(expectedOutput, result.outputs[i])) {
                             return `f(${JSON.stringify(fixture.inputs[i])})\nExpected: ${JSON.stringify(expectedOutput)}\nActual: ${JSON.stringify(result.outputs[i])}`;
+                        }
+                        return false;
+                    })
+                    .filter(Boolean)
+                    .join('\n');
+            }
+        if (recompileOk && !reEvalOk) {
+                msg += expected.outputs
+                    .map((expectedOutput, i) => {
+                        if (!deepEqual(expectedOutput, result.reEvalOutputs[i])) {
+                            return `f(${JSON.stringify(fixture.inputs[i])})\nExpected: ${JSON.stringify(expectedOutput)}\nActual: ${JSON.stringify(result.reEvalOutputs[i])}`;
                         }
                         return false;
                     })
